@@ -1,7 +1,8 @@
 // Command IconConvert turns Source Images into multi-size Favicons.
 //
-// The executable's icon and version information come from winres/winres.json;
-// regenerate the embedded resources with `go generate` after changing it.
+// The executable's icon (winres/icon.svg, converted to winres/icon.ico) and
+// version information come from winres/winres.json; regenerate the embedded
+// resources with `go generate` after changing them.
 //
 //go:generate go run github.com/tc-hib/go-winres@v0.3.3 make --arch amd64
 package main
