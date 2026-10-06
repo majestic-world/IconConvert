@@ -42,13 +42,22 @@ func vectorIcons(data []byte) ([]image.Image, error) {
 		out = append(out, value...)
 		return append(out, attr[len(attr)-1])
 	})
-	icon, err := oksvg.ReadIconStream(bytes.NewReader(data))
+	// A standalone SVG has no CSS context, so currentColor takes the initial
+	// CSS colour: black.
+	icon, err := oksvg.ReadReplacingCurrentColor(bytes.NewReader(data), "black")
 	if err != nil {
 		return nil, err
 	}
 	w, h := icon.ViewBox.W, icon.ViewBox.H
 	if w <= 0 || h <= 0 {
 		return nil, errors.New("SVG has no usable size (missing viewBox, width or height)")
+	}
+
+	// The rasterizer applies stroke widths and dashes in output pixels; they
+	// are SVG units, so scale them with each Icon Size.
+	strokes := make([]oksvg.PathStyle, len(icon.SVGPaths))
+	for i, p := range icon.SVGPaths {
+		strokes[i] = p.PathStyle
 	}
 
 	images := make([]image.Image, 0, len(iconSizes))
@@ -58,6 +67,15 @@ func vectorIcons(data []byte) ([]image.Image, error) {
 		scale := side / max(w, h)
 		tw, th := w*scale, h*scale
 		icon.SetTarget((side-tw)/2, (side-th)/2, tw, th)
+		for i := range icon.SVGPaths {
+			p, orig := &icon.SVGPaths[i], strokes[i]
+			p.LineWidth = orig.LineWidth * scale
+			p.DashOffset = orig.DashOffset * scale
+			p.Dash = make([]float64, len(orig.Dash))
+			for j, d := range orig.Dash {
+				p.Dash[j] = d * scale
+			}
+		}
 
 		dst := image.NewNRGBA(image.Rect(0, 0, size, size))
 		scanner := rasterx.NewScannerGV(size, size, dst, dst.Bounds())

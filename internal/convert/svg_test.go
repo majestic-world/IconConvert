@@ -1,6 +1,7 @@
 package convert_test
 
 import (
+	"image/color"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -74,6 +75,35 @@ func TestVectorImageWithImplicitlyRepeatedArcsKeepsItsHole(t *testing.T) {
 	assertAlpha(t, largest, 128, 128, 0)  // centre of the hole
 	assertAlpha(t, largest, 181, 181, 0)  // hole, between the second arc and its chord
 	assertAlpha(t, largest, 128, 10, 255) // ring
+}
+
+// Icon sets such as Lucide paint with currentColor, which a standalone SVG
+// resolves to its initial value: black.
+func TestVectorImagePaintedWithCurrentColorIsDrawnBlack(t *testing.T) {
+	dir := t.TempDir()
+	src := writeFile(t, dir, "bar.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4"><path d="M2 12H22"/></svg>`))
+
+	outcome, _, stderr := run(t, src)
+
+	if outcome.ExitCode != 0 {
+		t.Fatalf("exit code = %d, stderr:\n%s", outcome.ExitCode, stderr)
+	}
+	largest := readIco(t, filepath.Join(dir, "favicon.ico"))[5].img
+	assertColour(t, largest, color.NRGBA{A: 255}) // the stroke crosses the centre
+	assertAlpha(t, largest, 128, 20, 0)           // fill="none": nothing above the stroke
+}
+
+// A stroke-width is in the SVG's own units, so it grows with the Icon Size:
+// 2 units of a 24-unit viewBox are about 21 px at 256 px.
+func TestVectorImageStrokeWidthScalesWithIconSize(t *testing.T) {
+	dir := t.TempDir()
+	src := writeFile(t, dir, "bar.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="2"><path d="M2 12H22"/></svg>`))
+
+	run(t, src)
+
+	largest := readIco(t, filepath.Join(dir, "favicon.ico"))[5].img
+	assertAlpha(t, largest, 128, 128+8, 255) // inside the 21 px stroke
+	assertAlpha(t, largest, 128, 128+14, 0)  // beyond it
 }
 
 func TestVectorImageThatDrawsNothingIsRejected(t *testing.T) {
