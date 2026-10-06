@@ -3,6 +3,7 @@ package convert_test
 import (
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -43,4 +44,49 @@ func TestVectorImageIsRecognisedByContentNotExtension(t *testing.T) {
 		t.Fatalf("exit code = %d, stderr:\n%s", outcome.ExitCode, stderr)
 	}
 	readIco(t, filepath.Join(dir, "favicon.ico"))
+}
+
+// Minified SVGs (such as Simple Icons) pack arc flags without separators:
+// "a12 12 0 1012 12" means rx=12 ry=12 rotation=0 large-arc=1 sweep=0 x=12 y=12.
+func TestVectorImageWithPackedArcFlagsIsDrawn(t *testing.T) {
+	dir := t.TempDir()
+	src := writeFile(t, dir, "disc.svg", []byte(`<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 0a12 12 0 1012 12A12 12 0 0012 0z"/></svg>`))
+
+	outcome, _, stderr := run(t, src)
+
+	if outcome.ExitCode != 0 {
+		t.Fatalf("exit code = %d, stderr:\n%s", outcome.ExitCode, stderr)
+	}
+	largest := readIco(t, filepath.Join(dir, "favicon.ico"))[5].img
+	assertAlpha(t, largest, 128, 128, 255) // disc centre
+	assertAlpha(t, largest, 2, 2, 0)       // outside the disc
+}
+
+// The hole is a circle drawn as two arcs, the second one an implicit repeat of
+// the arc command, as in minified Simple Icons SVGs.
+func TestVectorImageWithImplicitlyRepeatedArcsKeepsItsHole(t *testing.T) {
+	dir := t.TempDir()
+	src := writeFile(t, dir, "ring.svg", []byte(`<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 0a12 12 0 1012 12A12 12 0 0012 0zm0 20A8 8 0 1120 12 8 8 0 0112 20z"/></svg>`))
+
+	run(t, src)
+
+	largest := readIco(t, filepath.Join(dir, "favicon.ico"))[5].img
+	assertAlpha(t, largest, 128, 128, 0)  // centre of the hole
+	assertAlpha(t, largest, 181, 181, 0)  // hole, between the second arc and its chord
+	assertAlpha(t, largest, 128, 10, 255) // ring
+}
+
+func TestVectorImageThatDrawsNothingIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	src := writeFile(t, dir, "label.svg", []byte(`<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><text x="2" y="12">hi</text></svg>`))
+
+	outcome, _, stderr := run(t, src)
+
+	if outcome.ExitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", outcome.ExitCode)
+	}
+	if !strings.Contains(stderr, "label.svg") {
+		t.Fatalf("error should name the Source Image, got:\n%s", stderr)
+	}
+	assertMissing(t, filepath.Join(dir, "favicon.ico"))
 }
